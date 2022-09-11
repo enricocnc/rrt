@@ -1,0 +1,14 @@
+rrt_node:
+  # Generic params
+  map_topic: /map
+  start_topic: /initialpose
+  goal_topic: /goal
+  steering_distance: 3.0 # distance considered during the steering phase
+  # radius_constant: 50.0
+  min_iterations: 800 # min number of iterations to be performed
+  ancestors_depth: 1 # ancestors are considered until this degree
+
+  # Differential drive params
+  differential_drive: True
+  extend_function_type: dubins # dubins is currently the only supported option
+  dubins_radius: 0.5 # turning radius for dubins path computation

@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<launch>
+  	<arg name="map_name" default="map"/>
+
+	<rosparam file="$(find rrt)/config/params.yaml" />
+
+	<node pkg="rrt" type="rrt_node" name="rrt_node" output="screen"/>
+
+	<node name="map_server" pkg="map_server" type="map_server" args="$(find rrt)/maps/$(arg map_name).yaml"/>
+
+	<node name="rviz" pkg="rviz" type="rviz" args="-d $(find rrt)/rviz/config.rviz"/>
+</launch>
