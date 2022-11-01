@@ -1,14 +1,45 @@
 rrt_node:
-  # Generic params
   map_topic: /map
   start_topic: /initialpose
   goal_topic: /goal
-  steering_distance: 3.0 # distance considered during the steering phase
-  # radius_constant: 50.0
-  min_iterations: 800 # min number of iterations to be performed
-  ancestors_depth: 1 # ancestors are considered until this degree
 
-  # Differential drive params
-  differential_drive: True
-  extend_function_type: dubins # dubins is currently the only supported option
-  dubins_radius: 0.5 # turning radius for dubins path computation
+  min_iterations: 1200
+  max_iterations: 20000
+
+  extend_function_type: dubins # valid options: dubins, posq, spline
+
+  # Since different extend functions work well with different parameters, each extend function has its own set of parameters
+  dubins:
+    # Generic params
+    steering_distance: 3.0 # m
+    steering_angular_distance: 90.0 # deg
+    radius_constant: 18.0
+    ancestors_depth: 1
+
+    # Specific params
+    turning_radius: 0.5 # m
+
+  posq:
+    # Generic params
+    steering_distance: 8.0 # m
+    steering_angular_distance: 45.0 # deg
+    radius_constant: 30.0
+    ancestors_depth: 0
+
+    # Specific params
+    # control gains
+    K_rho: 0.6
+    K_phi: -2.0
+    K_alpha: 5.0
+    K_v: 2.0
+
+  spline:
+    # Generic params
+    steering_distance: 6.0 # m
+    steering_angular_distance: 90.0 # deg
+    radius_constant: 25.0
+    ancestors_depth: 0
+
+    # Specific params
+    tf: 4.0 # final time (used for spline interpolation duration)
+    v: 1.6 # robot velocity (used for derivatives computation)

@@ -8,11 +8,9 @@
 #include <stdexcept>
 #include <vector>
 
-double computeDistance(const WorldPosition &p1, const WorldPosition &p2) {
-  double dx = p1.x - p2.x;
-  double dy = p1.y - p2.y;
-  return sqrt(dx * dx + dy * dy);
-}
+using namespace types;
+
+namespace dubins {
 
 enum class TrajectoryType{
   S,
@@ -25,8 +23,8 @@ struct DubinsPathDescriptor {
   std::array<double, 3> params;
   double cost;
   PathType type;
-  ConfigurationDiffDrive start;
-  ConfigurationDiffDrive goal;
+  Pose2D start;
+  Pose2D goal;
   double radius;
 };
 
@@ -34,7 +32,7 @@ struct DubinsPathDescriptor {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-WorldPosition computeRightCircleCenter(const ConfigurationDiffDrive &conf, const double &rho) {
+WorldPosition computeRightCircleCenter(const Pose2D &conf, const double &rho) {
   double th = conf.yaw - M_PI_2;
   return WorldPosition{.x = conf.position.x + rho * cos(th),
                        .y = conf.position.y + rho * sin(th)};
@@ -44,7 +42,7 @@ WorldPosition computeRightCircleCenter(const ConfigurationDiffDrive &conf, const
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-WorldPosition computeLeftCircleCenter(const ConfigurationDiffDrive &conf, const double &rho) {
+WorldPosition computeLeftCircleCenter(const Pose2D &conf, const double &rho) {
   double th = conf.yaw + M_PI_2;
   return WorldPosition{.x = conf.position.x + rho * cos(th),
                        .y = conf.position.y + rho * sin(th)};
@@ -90,7 +88,7 @@ bool isValidDubinsPathType(const PathType type) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-DubinsPathDescriptor computeDubinsPathDescriptor(const ConfigurationDiffDrive &conf1, const ConfigurationDiffDrive &conf2,
+DubinsPathDescriptor computeDubinsPathDescriptor(const Pose2D &conf1, const Pose2D &conf2,
                                                  const double &rho, const PathType &type) {
   auto C1 = type.front() == TrajectoryType::R ? computeRightCircleCenter(conf1, rho) : computeLeftCircleCenter(conf1, rho);
   auto C2 = type.back() == TrajectoryType::R ? computeRightCircleCenter(conf2, rho) : computeLeftCircleCenter(conf2, rho);
@@ -153,7 +151,7 @@ DubinsPathDescriptor computeDubinsPathDescriptor(const ConfigurationDiffDrive &c
   params.front() = fabs(fmod(conf1.yaw - final_yaw1, 2.0 * M_PI));
   params.back() = fabs(fmod(conf2.yaw - start_yaw2, 2.0 * M_PI));
 
-  double cost = type.at(1) == TrajectoryType::S ? (params.front() + params.back()) * rho + params.at(1) : std::accumulate(params.begin(), params.end(), 0.0) * rho;
+  double cost = type.at(1) == TrajectoryType::S ? (params.front() + params.back()) * rho + params.at(1) : std::accumulate(params.cbegin(), params.cend(), 0.0) * rho;
 
   return DubinsPathDescriptor{.params = params, .cost = cost, .type = type, .start = conf1, .goal = conf2, .radius = rho};
 }
@@ -162,10 +160,10 @@ DubinsPathDescriptor computeDubinsPathDescriptor(const ConfigurationDiffDrive &c
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::vector<ConfigurationDiffDrive> computeDubinsPathFromDescriptor(const DubinsPathDescriptor &descriptor) {
+std::vector<Pose2D> computeDubinsPathFromDescriptor(const DubinsPathDescriptor &descriptor) {
   static constexpr double dphi = 3.0 * M_PI / 180.0;
   if (descriptor.cost == std::numeric_limits<double>::infinity())
-    return std::vector<ConfigurationDiffDrive>{};
+    return std::vector<Pose2D>{};
 
   auto C1 = descriptor.type.front() == TrajectoryType::R ? computeRightCircleCenter(descriptor.start, descriptor.radius)
                                                          : computeLeftCircleCenter(descriptor.start, descriptor.radius);
@@ -173,11 +171,11 @@ std::vector<ConfigurationDiffDrive> computeDubinsPathFromDescriptor(const Dubins
                                                          : computeLeftCircleCenter(descriptor.goal, descriptor.radius);
   auto point_on_circle = [] (const double yaw0, const double dyaw, const WorldPosition &C, const double radius, const int sign) {
     double theta = yaw0 - sign * dyaw;
-    return ConfigurationDiffDrive{.position = WorldPosition{.x = C.x - sign * radius * sin(theta),
-                                                            .y = C.y + sign * radius * cos(theta)},
-                                  .yaw = theta};
+    return Pose2D{.position = WorldPosition{.x = C.x - sign * radius * sin(theta),
+                                            .y = C.y + sign * radius * cos(theta)},
+                  .yaw = theta};
   };
-  std::vector<ConfigurationDiffDrive> path;
+  std::vector<Pose2D> path;
   if (descriptor.type.at(1) == TrajectoryType::S)
     path.reserve(std::floor(descriptor.params.front() / dphi) + std::floor(descriptor.params.back() / dphi) + 1);
   else
@@ -197,9 +195,9 @@ std::vector<ConfigurationDiffDrive> computeDubinsPathFromDescriptor(const Dubins
   double start_yaw2;
   if (descriptor.type.at(1) == TrajectoryType::S) {
     // add first point on final circle (for a CSC path) 
-    auto conf = ConfigurationDiffDrive{.position = WorldPosition{.x = path.back().position.x + descriptor.params.at(1) * cos(path.back().yaw),
-                                                                 .y = path.back().position.y + descriptor.params.at(1) * sin(path.back().yaw)},
-                                       .yaw = path.back().yaw};
+    auto conf = Pose2D{.position = WorldPosition{.x = path.back().position.x + descriptor.params.at(1) * cos(path.back().yaw),
+                                                 .y = path.back().position.y + descriptor.params.at(1) * sin(path.back().yaw)},
+                       .yaw = path.back().yaw};
     path.push_back(conf);
     start_yaw2 = path.back().yaw;
   } else {
@@ -230,8 +228,8 @@ std::vector<ConfigurationDiffDrive> computeDubinsPathFromDescriptor(const Dubins
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::vector<ConfigurationDiffDrive> computeDubinsPath(const ConfigurationDiffDrive &conf1, const ConfigurationDiffDrive &conf2,
-                                                      const double &rho, const PathType &type) {
+std::vector<Pose2D> computeDubinsPath(const Pose2D &conf1, const Pose2D &conf2,
+                                      const double &rho, const PathType &type) {
   if (!isValidDubinsPathType(type))
     throw std::invalid_argument("Invalid Dubins path type!");
   return computeDubinsPathFromDescriptor(computeDubinsPathDescriptor(conf1, conf2, rho, type));
@@ -241,9 +239,9 @@ std::vector<ConfigurationDiffDrive> computeDubinsPath(const ConfigurationDiffDri
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::pair<std::vector<ConfigurationDiffDrive>, double> computeShortestDubinsPath(const ConfigurationDiffDrive &conf1,
-                                                              const ConfigurationDiffDrive &conf2,
-                                                              const double &rho) {
+std::pair<std::vector<Pose2D>, double> computeShortestDubinsPath(const Pose2D &conf1,
+                                                                 const Pose2D &conf2,
+                                                                 const double &rho) {
   static constexpr std::array<PathType, 6> allowed_types= {{{TrajectoryType::R, TrajectoryType::S, TrajectoryType::R},
                                                             {TrajectoryType::L, TrajectoryType::S, TrajectoryType::L},
                                                             {TrajectoryType::R, TrajectoryType::S, TrajectoryType::L},
@@ -255,7 +253,9 @@ std::pair<std::vector<ConfigurationDiffDrive>, double> computeShortestDubinsPath
   for (const auto &type : allowed_types)
     descriptors.push_back(computeDubinsPathDescriptor(conf1, conf2, rho, type));
 
-  auto optimal = std::min_element(descriptors.begin(), descriptors.end(), 
+  auto optimal = std::min_element(descriptors.cbegin(), descriptors.cend(), 
                                   [](const DubinsPathDescriptor &d1, const DubinsPathDescriptor &d2) { return d1.cost < d2.cost;});
   return std::make_pair(computeDubinsPathFromDescriptor(*optimal), optimal->cost);
 }
+
+} // namespace dubins

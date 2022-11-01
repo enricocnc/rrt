@@ -25,10 +25,12 @@ include_directories(
 )
 
 add_library(${PROJECT_NAME}
-  src/rrt.cpp
-  src/rrt_2D.cpp
-  src/rrt_diff_drive.cpp
+  src/utils.cpp
+  src/types.cpp
   src/dubins.cpp
+  src/posq.cpp
+  src/cubic_spline.cpp
+  src/rrt.cpp
 )
 
 add_executable(${PROJECT_NAME}_node src/rrt_node.cpp)

@@ -1,13 +1,22 @@
 #include "rrt/rrt.h"
+#include <rrt/dubins.h>
+#include <rrt/posq.h>
+#include <rrt/cubic_spline.h>
+#include <rrt/utils.h>
 
 #include <visualization_msgs/Marker.h>
+#include <tf2/utils.h>
 
+#include <random>
 #include <limits>
 #include <memory>
 #include <vector>
 
-template<typename RobotConfiguration>
-RRT<RobotConfiguration>::RRT(ros::NodeHandle* nodehandle, const unsigned int &dim) : nh_(*nodehandle), dimensionality_(dim) {
+using namespace types;
+
+namespace rrt {
+
+RRT::RRT(ros::NodeHandle* nodehandle) : nh_(*nodehandle), dimensionality_(3) {
   std::string map_topic, start_topic, goal_topic;
   nh_.param("map_topic", map_topic, std::string("/map"));
   nh_.param("start_topic", start_topic, std::string("/initialpose"));
@@ -15,15 +24,29 @@ RRT<RobotConfiguration>::RRT(ros::NodeHandle* nodehandle, const unsigned int &di
 
   start_sub_ = nh_.subscribe(start_topic, 1, &RRT::initialPoseCallback_, this); 
   goal_sub_ = nh_.subscribe(goal_topic, 1, &RRT::goalCallback_, this); 
-
-  double steering_distance_default = 3.0;
-  nh_.param("steering_distance", steering_distance_, steering_distance_default);
-  if (steering_distance_ <= 0.0) {
-    ROS_WARN("Steering distance must be positive (received value: %f)! Setting it to %f...", steering_distance_, steering_distance_default);
-    steering_distance_ = steering_distance_default;
-  }
-  nh_.param("radius_constant", radius_constant_, 50.0);
   
+  pub_marker_ = nh_.advertise<visualization_msgs::Marker>("/path_marker", 1, true);
+
+  initParams_();
+
+  // Wait for map
+  while(ros::ok()){
+    boost::shared_ptr<nav_msgs::OccupancyGrid const> map = ros::topic::waitForMessage<nav_msgs::OccupancyGrid>(map_topic, ros::Duration(4.0));
+    if(map){
+      ROS_INFO("Got map!");
+      map_ = *map;
+      break;
+    } else {
+      ROS_INFO("Waiting for map...");
+    }
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void RRT::initParams_() {
   // ROS can't take unsigned int params
   int tmp;
   nh_.param("min_iterations", tmp, 0);
@@ -32,42 +55,93 @@ RRT<RobotConfiguration>::RRT(ros::NodeHandle* nodehandle, const unsigned int &di
     tmp = 0;
   }
   min_iterations_ = static_cast<size_t>(tmp);
-  nh_.param("ancestors_depth", tmp, 0);
+  
+  int max_iterations_default = 10000;
+  nh_.param("max_iterations", tmp, max_iterations_default);
+  if (tmp < 0) {
+    ROS_WARN("Max number of iterations can't be negative (received value: %d)! Setting it to %d...", tmp, max_iterations_default);
+    tmp = max_iterations_default;
+  }
+  max_iterations_ = static_cast<size_t>(tmp);
+  
+  std::string extend_function_type;
+  nh_.param("extend_function_type", extend_function_type, std::string("dubins"));
+
+  if (extend_function_type == "dubins") {
+    double dubins_radius, dubins_radius_default = 0.5;
+    nh_.param(extend_function_type + "/turning_radius", dubins_radius, dubins_radius_default);
+    if (dubins_radius <= 0.0) {
+      ROS_WARN("Dubins turning radius must be positive (received value: %f)! Setting it to %f...", dubins_radius, dubins_radius_default);
+      dubins_radius = dubins_radius_default;
+    }
+
+    compute_path_ = std::bind(dubins::computeShortestDubinsPath, std::placeholders::_1, std::placeholders::_2, dubins_radius);
+  } else if (extend_function_type == "posq") {
+    double K_rho, K_phi, K_alpha, K_v;
+    nh_.param(extend_function_type + "/K_rho", K_rho, 0.6);
+    nh_.param(extend_function_type + "/K_phi", K_phi, -2.0);
+    nh_.param(extend_function_type + "/K_alpha", K_alpha, 5.0);
+    nh_.param(extend_function_type + "/K_v", K_v, 2.0);
+    compute_path_ = std::bind(posq::computePOSQPath, std::placeholders::_1, std::placeholders::_2, K_rho, K_phi, K_alpha, K_v);
+  } else if (extend_function_type == "spline") {
+    double tf, tf_default = 5.0;
+    nh_.param(extend_function_type + "/tf", tf, tf_default);
+    if (tf <= 0.0) {
+      ROS_WARN("Time must be positive (received value: %f)! Setting it to %f...", tf, tf_default);
+      tf = tf_default;
+    }
+
+    double v, v_default = 1.5;
+    nh_.param(extend_function_type + "/v", v, v_default);
+    if (v <= 0.0) {
+      ROS_WARN("Robot velocity must be positive (received value: %f)! Setting it to %f...", v, v_default);
+      v = v_default;
+    }
+
+    compute_path_ = std::bind(spline::computeSplinePath, std::placeholders::_1, std::placeholders::_2, tf, v);
+  } else
+    throw std::invalid_argument("Unsupported extend function type!");
+  
+  double steering_distance_default = 3.0;
+  nh_.param(extend_function_type + "/steering_distance", steering_distance_, steering_distance_default);
+  if (steering_distance_ <= 0.0) {
+    ROS_WARN("Steering distance must be positive (received value: %f)! Setting it to %f...", steering_distance_, steering_distance_default);
+    steering_distance_ = steering_distance_default;
+  }
+
+  nh_.param(extend_function_type + "/steering_angular_distance", steering_angular_distance_, utility::deg2rad(90.0));
+  if (steering_angular_distance_ < 0.0) {
+    ROS_WARN("Steering angular distance must be positive (received value: %f)! Setting it to %f...", steering_angular_distance_, -steering_angular_distance_);
+    steering_angular_distance_ *= -1.0;
+  }
+
+  double radius_constant_default = 30.0;
+  nh_.param(extend_function_type + "/radius_constant", radius_constant_, radius_constant_default);
+  if (radius_constant_ <= 0.0) {
+    ROS_WARN("Radius constant must be positive (received value: %f)! Setting it to %f...", radius_constant_, radius_constant_default);
+    radius_constant_ = radius_constant_default;
+  }
+  
+  nh_.param(extend_function_type + "/ancestors_depth", tmp, 0);
   if (tmp < 0) {
     ROS_WARN("Ancestors depth can't be negative (received value: %d)! Setting it to 0...", tmp);
     tmp = 0;
   }
   ancestors_depth_ = static_cast<unsigned int>(tmp);
-
-  pub_marker_ = nh_.advertise<visualization_msgs::Marker>("/path_marker", 1, true);
-  
-  // Wait for map
-	while(ros::ok()){
-		boost::shared_ptr<nav_msgs::OccupancyGrid const> map = ros::topic::waitForMessage<nav_msgs::OccupancyGrid>(map_topic, ros::Duration(4.0));
-		if(map){
-			ROS_INFO("Got map!");
-      map_ = *map;
-			break;
-		} else {
-			ROS_INFO("Waiting for map...");
-		}
-	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename RobotConfiguration>
-bool RRT<RobotConfiguration>::isFreeMapCell_(const size_t &x, const size_t &y) {
+bool RRT::isFreeMapCell_(const size_t &x, const size_t &y) {
   if (map_.data[x + y * map_.info.width] == 0)
     return true;
   else
     return false;
 }
 
-template <typename RobotConfiguration>
-bool RRT<RobotConfiguration>::isFreeMapCell_(const GridPosition &pos) {
+bool RRT::isFreeMapCell_(const GridPosition &pos) {
   if (map_.data[pos.x + pos.y * map_.info.width] == 0)
     return true;
   else
@@ -78,8 +152,7 @@ bool RRT<RobotConfiguration>::isFreeMapCell_(const GridPosition &pos) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename RobotConfiguration>
-bool RRT<RobotConfiguration>::isValidConfiguration_(const RobotConfiguration &configuration) {
+bool RRT::isValidConfiguration_(const Pose2D &configuration) {
   return isFreeMapCell_(fromWorldToGrid_(configuration.position));
 }
 
@@ -87,8 +160,7 @@ bool RRT<RobotConfiguration>::isValidConfiguration_(const RobotConfiguration &co
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename RobotConfiguration>
-GridPosition RRT<RobotConfiguration>::fromWorldToGrid_(const WorldPosition &world_position) {
+GridPosition RRT::fromWorldToGrid_(const WorldPosition &world_position) {
   return GridPosition({.x = static_cast<size_t>(std::floor((world_position.x - map_.info.origin.position.x) / map_.info.resolution)),
                        .y = static_cast<size_t>(std::floor((world_position.y - map_.info.origin.position.y) / map_.info.resolution))});
 }
@@ -97,8 +169,7 @@ GridPosition RRT<RobotConfiguration>::fromWorldToGrid_(const WorldPosition &worl
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename RobotConfiguration>
-bool RRT<RobotConfiguration>::collisionFree_(const std::vector<RobotConfiguration> &path) {
+bool RRT::collisionFree_(const std::vector<Pose2D> &path) {
   if (path.size() <= 1)
     throw std::invalid_argument("Invalid path size!");
   
@@ -113,8 +184,7 @@ bool RRT<RobotConfiguration>::collisionFree_(const std::vector<RobotConfiguratio
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename RobotConfiguration>
-bool RRT<RobotConfiguration>::rayTrace_(const GridPosition &pos1, const GridPosition &pos2) {
+bool RRT::rayTrace_(const GridPosition &pos1, const GridPosition &pos2) {
 
   long int dx = pos1.x > pos2.x ? static_cast<long int>(pos1.x - pos2.x) : static_cast<long int>(pos2.x - pos1.x);
   long int dy = pos1.y > pos2.y ? static_cast<long int>(pos1.y - pos2.y) : static_cast<long int>(pos2.y - pos1.y);
@@ -155,9 +225,8 @@ bool RRT<RobotConfiguration>::rayTrace_(const GridPosition &pos1, const GridPosi
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-void RRT<RobotConfiguration>::initialPoseCallback_(const geometry_msgs::PoseWithCovarianceStamped& msg) {
-  RobotConfiguration conf = fromPoseToRobotConfiguration_(msg.pose.pose);
+void RRT::initialPoseCallback_(const geometry_msgs::PoseWithCovarianceStamped& msg) {
+  Pose2D conf = fromPoseToRobotConfiguration_(msg.pose.pose);
   if (!isValidConfiguration_(conf)) {
     ROS_INFO("Ignoring invalid start!");
     return;
@@ -172,9 +241,8 @@ void RRT<RobotConfiguration>::initialPoseCallback_(const geometry_msgs::PoseWith
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-void RRT<RobotConfiguration>::goalCallback_(const geometry_msgs::PoseStamped& msg) {
-  RobotConfiguration conf = fromPoseToRobotConfiguration_(msg.pose);
+void RRT::goalCallback_(const geometry_msgs::PoseStamped& msg) {
+  Pose2D conf = fromPoseToRobotConfiguration_(msg.pose);
   if (!isValidConfiguration_(conf)) {
     ROS_INFO("Ignoring invalid goal!");
     return;
@@ -189,8 +257,16 @@ void RRT<RobotConfiguration>::goalCallback_(const geometry_msgs::PoseStamped& ms
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-geometry_msgs::Point RRT<RobotConfiguration>::fromConfigurationToPoint3D_(const RobotConfiguration &configuration) {
+Pose2D RRT::fromPoseToRobotConfiguration_(const geometry_msgs::Pose &pose) {
+  return Pose2D{.position = WorldPosition{.x = pose.position.x, .y = pose.position.y},
+                .yaw = tf2::getYaw(pose.orientation)};
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+geometry_msgs::Point RRT::fromConfigurationToPoint3D_(const Pose2D &configuration) {
   geometry_msgs::Point p;
   p.x = configuration.position.x;
   p.y = configuration.position.y;
@@ -202,8 +278,7 @@ geometry_msgs::Point RRT<RobotConfiguration>::fromConfigurationToPoint3D_(const 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-bool RRT<RobotConfiguration>::isGoal_(const RobotConfiguration &pos) {
+bool RRT::isGoal_(const Pose2D &pos) {
   if (goal_node_.has_value())
     return pos == goal_node_.value();
   return false;
@@ -213,12 +288,11 @@ bool RRT<RobotConfiguration>::isGoal_(const RobotConfiguration &pos) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-size_t RRT<RobotConfiguration>::findNearestNode_(const RobotConfiguration &configuration) {
-  double min_dist = computeSquaredDistance_(configuration, nodes_[0].configuration);
+size_t RRT::findNearestNode_(const Pose2D &configuration) {
+  double min_dist = computeSquaredDistance(configuration.position, nodes_[0].configuration.position);
   size_t min_idx = 0;
   for (size_t i = 1; i < nodes_.size(); ++i) {
-    double dist = computeSquaredDistance_(configuration, nodes_[i].configuration);
+    double dist = computeSquaredDistance(configuration.position, nodes_[i].configuration.position);
     if (dist < min_dist) {
       min_dist = dist;
       min_idx = i;
@@ -232,12 +306,11 @@ size_t RRT<RobotConfiguration>::findNearestNode_(const RobotConfiguration &confi
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-std::vector<size_t> RRT<RobotConfiguration>::findNodesWithinRadius_(const RobotConfiguration &pos, const double &radius) {
+std::vector<size_t> RRT::findNodesWithinRadius_(const Pose2D &pos, const double &radius) {
   std::vector<size_t> nodes_idx;
   double squared_radius = radius * radius;
   for (const auto &node : nodes_)
-    if (computeSquaredDistance_(pos, node.configuration) <= squared_radius)
+    if (computeSquaredDistance(pos.position, node.configuration.position) <= squared_radius)
       nodes_idx.push_back(node.id);
   return nodes_idx;
 }
@@ -246,8 +319,7 @@ std::vector<size_t> RRT<RobotConfiguration>::findNodesWithinRadius_(const RobotC
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-void RRT<RobotConfiguration>::visualizePath_() {
+void RRT::visualizePath_() {
   size_t idx = std::numeric_limits<size_t>::max();
   for (size_t i = 0; i < nodes_.size(); ++i) {
     if (isGoal_(nodes_[i].configuration)) {
@@ -272,7 +344,7 @@ void RRT<RobotConfiguration>::visualizePath_() {
 	path_marker.color.a = 1.0;
 
   while (nodes_.at(idx).parent != idx) {
-    for (auto it = nodes_[idx].path_from_parent->rbegin(); it != nodes_[idx].path_from_parent->rend(); ++it)
+    for (auto it = nodes_[idx].path_from_parent->crbegin(); it != nodes_[idx].path_from_parent->crend(); ++it)
       path_marker.points.push_back(fromConfigurationToPoint3D_(*it));
     idx = nodes_[idx].parent;
   }
@@ -285,8 +357,7 @@ void RRT<RobotConfiguration>::visualizePath_() {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-void RRT<RobotConfiguration>::visualizeTree_() {
+void RRT::visualizeTree_() {
   visualization_msgs::Marker tree_marker;
   tree_marker.header.frame_id = "map";
 	tree_marker.ns = "tree";
@@ -316,8 +387,10 @@ void RRT<RobotConfiguration>::visualizeTree_() {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-void RRT<RobotConfiguration>::includeAncestors_(std::vector<size_t> &indexes) {
+void RRT::includeAncestors_(std::vector<size_t> &indexes) {
+  if (ancestors_depth_ == 0)
+    return;
+
   size_t initial_size = indexes.size();
   indexes.reserve(initial_size * (ancestors_depth_ + 1));
 
@@ -341,38 +414,40 @@ void RRT<RobotConfiguration>::includeAncestors_(std::vector<size_t> &indexes) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-double RRT<RobotConfiguration>::computeSquaredDistance_(const RobotConfiguration &conf1, const RobotConfiguration &conf2) {
-  double dx = conf1.position.x - conf2.position.x;
-  double dy = conf1.position.y - conf2.position.y;
-  return dx * dx + dy * dy;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename RobotConfiguration>
-RobotConfiguration RRT<RobotConfiguration>::steeringFunction_(const RobotConfiguration &q_nearest, const RobotConfiguration &q_rand) {
-  RobotConfiguration q_steer = q_rand;
-  double squared_dist = computeSquaredDistance_(q_nearest, q_rand);
+Pose2D RRT::steeringFunction_(const Pose2D &q_nearest, const Pose2D &q_rand) {
+  Pose2D q_steer = q_rand;
+  double squared_dist = computeSquaredDistance(q_nearest.position, q_rand.position);
   if (squared_dist > steering_distance_ * steering_distance_) {
     double dist = std::sqrt(squared_dist);
     double tmp1 = steering_distance_ / dist;
     double tmp2 = (1.0 / tmp1) - 1.0;
     q_steer.position.x = tmp1 * (tmp2 * q_nearest.position.x + q_rand.position.x);
     q_steer.position.y = tmp1 * (tmp2 * q_nearest.position.y + q_rand.position.y);
-    return q_steer;
-  } else
-    return q_rand;
+  }
+  double angular_dist = utility::shortestAngularDistance(q_nearest.yaw, q_rand.yaw);
+  if (fabs(angular_dist) > steering_angular_distance_)
+    q_steer.yaw = utility::normalizeAngle(q_nearest.yaw + utility::sign(angular_dist) * steering_angular_distance_);
+  return q_steer;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename RobotConfiguration>
-void RRT<RobotConfiguration>::searchPath_() {
+Pose2D RRT::randomRobotConfiguration_() {
+  static std::random_device rd;
+  static std::mt19937 mt(rd());
+  static std::uniform_real_distribution<double> x_coordinate(map_.info.origin.position.x, map_.info.origin.position.x + map_.info.resolution * map_.info.width);
+  static std::uniform_real_distribution<double> y_coordinate(map_.info.origin.position.y, map_.info.origin.position.y + map_.info.resolution * map_.info.height);
+  static std::uniform_real_distribution<double> yaw_coordinate(-M_PI, M_PI);
+  return Pose2D{.position = WorldPosition{.x = x_coordinate(mt), .y = y_coordinate(mt)}, .yaw = yaw_coordinate(mt)};
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void RRT::searchPath_() {
   ROS_INFO("Starting search...");
   ros::Time start_time = ros::Time::now();
   size_t goal_idx;
@@ -381,32 +456,33 @@ void RRT<RobotConfiguration>::searchPath_() {
   nodes_[0].id = 0;
   nodes_[0].parent = nodes_[0].id;
   nodes_[0].cost = 0.0;
-  nodes_[0].path_from_parent.reset(new std::vector<RobotConfiguration>{});
+  nodes_[0].path_from_parent.reset(new std::vector<Pose2D>{});
+  
+  nodes_.reserve(max_iterations_); // waste some memory, but improve efficiency (vector will not be reallocated)
 
   bool path_found = false;
   unsigned long int iterations = 0;
-  while (!path_found || iterations < min_iterations_) {
-    RobotConfiguration q_rand = (++iterations % 100 == 0 && !path_found) ? goal_node_.value() : randomRobotConfiguration_();
+  while ((!path_found || iterations < min_iterations_) && iterations < max_iterations_) {
+    Pose2D q_rand = (++iterations % 100 == 0 && !path_found) ? goal_node_.value() : randomRobotConfiguration_();
     size_t nearest_idx = findNearestNode_(q_rand);
-    RobotConfiguration q_steer = steeringFunction_(nodes_.at(nearest_idx).configuration, q_rand);
+    Pose2D q_steer = steeringFunction_(nodes_.at(nearest_idx).configuration, q_rand);
     if (isValidConfiguration_(q_steer)) {
       // connect along a minimum cost path
-      auto path = computeMinCostPath_(nodes_.at(nearest_idx).configuration, q_steer);
-      if (collisionFree_(path.first)) {
+      auto path = compute_path_(nodes_.at(nearest_idx).configuration, q_steer);
+      if (path.second < std::numeric_limits<double>::infinity() && collisionFree_(path.first)) {
         double c_min = nodes_.at(nearest_idx).cost + path.second;
         size_t id_min = nearest_idx;
-        // double radius = std::min(radius_constant_ * std::pow(std::log(nodes_.size()) / nodes_.size(), 1.0 / dimensionality_), steering_distance_);
-        double radius = steering_distance_; // set the radius with a simple and effective heuristic
+        double radius = std::min(radius_constant_ * std::pow(std::log(nodes_.size()) / nodes_.size(), 1.0 / dimensionality_), steering_distance_);
         std::vector<size_t> near_indexes = findNodesWithinRadius_(q_steer, radius);
         includeAncestors_(near_indexes);
-        std::unique_ptr<std::vector<RobotConfiguration>> best_path = std::make_unique<std::vector<RobotConfiguration>>(path.first);
+        std::unique_ptr<std::vector<Pose2D>> best_path = std::make_unique<std::vector<Pose2D>>(path.first);
         for (const auto &id : near_indexes) {
-          auto new_path = computeMinCostPath_(nodes_.at(id).configuration, q_steer);
+          auto new_path = compute_path_(nodes_.at(id).configuration, q_steer);
           double new_cost = new_path.second + nodes_[id].cost;
           if (new_cost < c_min && collisionFree_(new_path.first)) {
             c_min = new_cost;
             id_min = id;
-            best_path = std::make_unique<std::vector<RobotConfiguration>>(new_path.first);
+            best_path = std::make_unique<std::vector<Pose2D>>(new_path.first);
           }
         }
         nodes_.push_back(Node{.configuration = q_steer, .id = nodes_.size(), .parent = id_min, .cost = c_min, .path_from_parent = std::move(best_path)});
@@ -418,12 +494,12 @@ void RRT<RobotConfiguration>::searchPath_() {
           candidate_parents.push_back(nodes_.at(candidate_parents.back()).parent);
         for (const auto new_parent_id : candidate_parents) {
           for (const auto &id : near_indexes) {
-            auto new_path = computeMinCostPath_(nodes_[new_parent_id].configuration, nodes_.at(id).configuration);
+            auto new_path = compute_path_(nodes_[new_parent_id].configuration, nodes_.at(id).configuration);
             double new_cost = new_path.second + nodes_[new_parent_id].cost;
             if (new_cost < nodes_[id].cost && collisionFree_(new_path.first)) {
               nodes_[id].cost = new_cost;
               nodes_[id].parent = new_parent_id;
-              nodes_[id].path_from_parent = std::make_unique<std::vector<RobotConfiguration>>(new_path.first);
+              nodes_[id].path_from_parent = std::make_unique<std::vector<Pose2D>>(new_path.first);
             }
           }
         }
@@ -438,20 +514,18 @@ void RRT<RobotConfiguration>::searchPath_() {
   }
   ros::Time end_time = ros::Time::now();
   ROS_INFO("Search took: %f s", (end_time - start_time).toSec());
-  ROS_INFO("Total cost is: %f", nodes_[goal_idx].cost);
   ROS_INFO("Tree size is: %lu", nodes_.size());
   ROS_INFO("Total iterations: %lu", iterations);
-  ROS_INFO("#################################################");
-
+  
   visualizeTree_();
-  visualizePath_();
+  if (path_found) {
+    ROS_INFO("Total cost is: %f", nodes_[goal_idx].cost);
+    visualizePath_();
+  } else
+    ROS_INFO("PATH NOT FOUND!");
+  
+  ROS_INFO("#################################################");
 
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// force the template to generate the needed classes
-template class RRT<Configuration2D>;
-template class RRT<ConfigurationDiffDrive>;
+} // namespace rrt
