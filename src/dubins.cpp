@@ -76,18 +76,6 @@ WorldPosition computeIntermediateCircleCenter(const WorldPosition &C1, const Wor
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool isValidDubinsPathType(const PathType type) {
-  if (type.front() == TrajectoryType::S || type.back() == TrajectoryType::S)
-    return false;
-  if (type.front() == type.at(1) || type.at(1) == type.back())
-    return false;
-  return true;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-
 DubinsPathDescriptor computeDubinsPathDescriptor(const Pose2D &conf1, const Pose2D &conf2,
                                                  const double &rho, const PathType &type) {
   auto C1 = type.front() == TrajectoryType::R ? computeRightCircleCenter(conf1, rho) : computeLeftCircleCenter(conf1, rho);
@@ -177,20 +165,26 @@ std::vector<Pose2D> computeDubinsPathFromDescriptor(const DubinsPathDescriptor &
   };
   std::vector<Pose2D> path;
   if (descriptor.type.at(1) == TrajectoryType::S)
-    path.reserve(std::floor(descriptor.params.front() / dphi) + std::floor(descriptor.params.back() / dphi) + 1);
+    path.reserve(static_cast<size_t>(std::floor(descriptor.params.front() / dphi)) +
+                 static_cast<size_t>(std::floor(descriptor.params.back() / dphi)) +
+                 1);
   else
-    path.reserve(std::floor(descriptor.params.front() / dphi) + std::floor(descriptor.params.back() / dphi) + std::floor(descriptor.params.at(1) / dphi));
+    path.reserve(static_cast<size_t>(std::floor(descriptor.params.front() / dphi)) +
+                 static_cast<size_t>(std::floor(descriptor.params.back() / dphi)) +
+                 static_cast<size_t>(std::floor(descriptor.params.at(1) / dphi)));
+  path.push_back(descriptor.start);
 
   // add points on first arc
-  double dyaw = 0.0;
+  double dyaw = dphi;
   int sign = descriptor.type.front() == TrajectoryType::R ? 1 : -1;
   while (dyaw < descriptor.params.front()) {
     path.push_back(point_on_circle(descriptor.start.yaw, dyaw, C1, descriptor.radius, sign));
     dyaw += dphi;
   }
-  // manually add last point on first circle
-  dyaw = descriptor.params.front();
-  path.push_back(point_on_circle(descriptor.start.yaw, dyaw, C1, descriptor.radius, sign));
+  // manually add last point on first circle (if not already added)
+  auto last_point = point_on_circle(descriptor.start.yaw, descriptor.params.front(), C1, descriptor.radius, sign);
+  if (!(last_point == path.back()))
+    path.push_back(last_point);
   
   double start_yaw2;
   if (descriptor.type.at(1) == TrajectoryType::S) {
@@ -219,20 +213,10 @@ std::vector<Pose2D> computeDubinsPathFromDescriptor(const DubinsPathDescriptor &
     path.push_back(point_on_circle(start_yaw2, dyaw, C2, descriptor.radius, sign));
     dyaw += dphi;
   }
-  // manually add last point
-  path.push_back(descriptor.goal);
+  // manually add last point (if not already added)
+  if (!(path.back() == descriptor.goal))
+    path.push_back(descriptor.goal);
   return path;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////////////////
-
-std::vector<Pose2D> computeDubinsPath(const Pose2D &conf1, const Pose2D &conf2,
-                                      const double &rho, const PathType &type) {
-  if (!isValidDubinsPathType(type))
-    throw std::invalid_argument("Invalid Dubins path type!");
-  return computeDubinsPathFromDescriptor(computeDubinsPathDescriptor(conf1, conf2, rho, type));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -241,7 +225,10 @@ std::vector<Pose2D> computeDubinsPath(const Pose2D &conf1, const Pose2D &conf2,
 
 std::pair<std::vector<Pose2D>, double> computeShortestDubinsPath(const Pose2D &conf1,
                                                                  const Pose2D &conf2,
-                                                                 const double &rho) {
+                                                                 const DubinsParams &params) {
+  if (conf1 == conf2)
+    return std::make_pair(Path{conf1, conf2}, 0.0);
+
   static constexpr std::array<PathType, 6> allowed_types= {{{TrajectoryType::R, TrajectoryType::S, TrajectoryType::R},
                                                             {TrajectoryType::L, TrajectoryType::S, TrajectoryType::L},
                                                             {TrajectoryType::R, TrajectoryType::S, TrajectoryType::L},
@@ -251,7 +238,7 @@ std::pair<std::vector<Pose2D>, double> computeShortestDubinsPath(const Pose2D &c
   std::vector<DubinsPathDescriptor> descriptors;
   descriptors.reserve(allowed_types.size());
   for (const auto &type : allowed_types)
-    descriptors.push_back(computeDubinsPathDescriptor(conf1, conf2, rho, type));
+    descriptors.push_back(computeDubinsPathDescriptor(conf1, conf2, params.turning_radius, type));
 
   auto optimal = std::min_element(descriptors.cbegin(), descriptors.cend(), 
                                   [](const DubinsPathDescriptor &d1, const DubinsPathDescriptor &d2) { return d1.cost < d2.cost;});

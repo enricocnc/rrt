@@ -1,7 +1,9 @@
 #include <rrt/cubic_spline.h>
+
 #include <rrt/utils.h>
 
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <stdexcept>
 
@@ -25,6 +27,8 @@ private:
 CubicSpline::CubicSpline(const double &xi, const double &xf, const double &xi_dot, const double &xf_dot, const double &tf) : tf_(tf) {
   if (tf <= 0.0)
     throw std::runtime_error("Final time must be positive!");
+  if (xi == xf && xi_dot == xf_dot)
+    throw std::runtime_error("Can't interpolate between two equal values!");
 
   /*
   Spline coefficients are computed solving the following linear system:
@@ -94,17 +98,20 @@ Pose2D Spline2D::computePose(const double &t) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::pair<std::vector<Pose2D>, double> computeSplinePath(const Pose2D &conf1, const Pose2D &conf2,
-                                                         const double &tf, const double &v) {
+                                                         const SplineParams &params) {
+  if (conf1 == conf2)
+    return std::make_pair(Path{conf1, conf2}, 0.0);
+
   double t = 0.0;
   static constexpr double dt = 0.15;
 
-  Spline2D spline(conf1, conf2, tf, v);
+  Spline2D spline(conf1, conf2, params.tf, params.v);
 
   std::vector<Pose2D> path;
-  path.reserve(tf / dt + 2);
-  for (; t < tf; t += dt)
+  path.reserve(static_cast<size_t>(std::floor(params.tf / dt + 2)));
+  for (; t < params.tf; t += dt)
     path.push_back(spline.computePose(t));
-  path.push_back(spline.computePose(tf));
+  path.push_back(spline.computePose(params.tf));
 
   double path_length = 0.0;
   for (size_t i = 1; i < path.size(); ++i)

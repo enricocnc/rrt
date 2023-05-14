@@ -1,9 +1,10 @@
 #include <rrt/posq.h>
+
 #include <rrt/utils.h>
 
+#include <cmath>
 #include <cstddef>
 #include <memory>
-#include <cmath>
 #include <string>
 
 using namespace types;
@@ -45,8 +46,7 @@ Pose2D fromRelativeToAbsoluteConf(const RelativeConf &conf) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::pair<std::vector<Pose2D>, double> computePOSQPath(const Pose2D &conf1, const Pose2D &conf2,
-                                                       const double &K_rho, const double &K_phi,
-																											 const double &K_alpha, const double &K_v) {
+                                                       const POSQParams &params) {
   std::vector<RelativeConf> relative_path;
   relative_path.push_back(computeRelativeConfiguration(conf1, conf2));
   
@@ -54,11 +54,11 @@ std::pair<std::vector<Pose2D>, double> computePOSQPath(const Pose2D &conf1, cons
   static constexpr double dt = 0.15;
 
   while (relative_path.back().rho > gamma) {
-    double tanh_v = tanh(K_v * relative_path.back().rho);
-    double rho_dot = -K_rho * cos(relative_path.back().alpha) * tanh_v;
-    double tmp = fabs(relative_path.back().rho) > 1e-4 ? tanh_v / relative_path.back().rho : K_v; // substitute standard limit value if needed
-    double alpha_dot = K_rho * sin(relative_path.back().alpha) * tmp - K_alpha * relative_path.back().alpha - K_phi * relative_path.back().phi;
-    double phi_dot = -K_alpha * relative_path.back().alpha - K_phi * relative_path.back().phi;
+    double tanh_v = tanh(params.K_v * relative_path.back().rho);
+    double rho_dot = -params.K_rho * cos(relative_path.back().alpha) * tanh_v;
+    double tmp = fabs(relative_path.back().rho) > 1e-4 ? tanh_v / relative_path.back().rho : params.K_v; // substitute standard limit value if needed
+    double alpha_dot = params.K_rho * sin(relative_path.back().alpha) * tmp - params.K_alpha * relative_path.back().alpha - params.K_phi * relative_path.back().phi;
+    double phi_dot = -params.K_alpha * relative_path.back().alpha - params.K_phi * relative_path.back().phi;
     RelativeConf new_point = relative_path.back();
     new_point.rho += rho_dot * dt;
     new_point.alpha += alpha_dot * dt;

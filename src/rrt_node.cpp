@@ -1,6 +1,4 @@
-#include <rrt/rrt.h>
-
-#include <memory>
+#include <rrt/rrt_ros_interface.h>
 
 int main(int argc, char** argv) {
 
@@ -8,7 +6,7 @@ int main(int argc, char** argv) {
 	
 	ros::NodeHandle nh("~");
 
-	rrt::RRT node(&nh);
+	ros_interface::RRTRosInterface node(&nh);
 
 	ROS_INFO("Node initializated. Starting to spin");
 

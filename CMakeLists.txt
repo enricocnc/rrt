@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(rrt)
 
-add_compile_options(-std=c++17)
+include(cmake/compiler_flags.cmake)
 
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
@@ -10,14 +10,9 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   visualization_msgs
   tf2
-)
-
-catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES rrt
-#  CATKIN_DEPENDS nav_msgs roscpp std_msgs
-#  DEPENDS system_lib
-)
+  )
+  
+catkin_package()
 
 include_directories(
   include
@@ -30,8 +25,21 @@ add_library(${PROJECT_NAME}
   src/dubins.cpp
   src/posq.cpp
   src/cubic_spline.cpp
-  src/rrt.cpp
+  src/rrt_core.cpp
+  src/rrt_ros_interface.cpp
+  src/tree.cpp
+  src/grid.cpp
+  src/random_pose_generator.cpp
 )
+
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 20)
+add_compiler_flags(${PROJECT_NAME})
+
+if(ASAN_ENABLED)
+  message(STATUS "Enabling ASan...")
+  target_compile_options(${PROJECT_NAME} PUBLIC -fsanitize=leak -fsanitize=address -fsanitize=undefined)
+  target_link_options(${PROJECT_NAME} PUBLIC -fsanitize=leak -fsanitize=address  -fsanitize=undefined)
+endif()
 
 add_executable(${PROJECT_NAME}_node src/rrt_node.cpp)
 
@@ -39,3 +47,7 @@ target_link_libraries(${PROJECT_NAME}_node
   ${PROJECT_NAME}
   ${catkin_LIBRARIES}
 )
+
+set_target_properties(${PROJECT_NAME}_node PROPERTIES CXX_STANDARD 20)
+add_compiler_flags(${PROJECT_NAME}_node)
+
