@@ -67,7 +67,15 @@ Visualization Manager:
       Marker Topic: /path_marker
       Name: Marker
       Namespaces:
-        {}
+        path: true
+      Queue Size: 100
+      Value: true
+    - Class: rviz/MarkerArray
+      Enabled: true
+      Marker Topic: /tree_marker
+      Name: MarkerArray
+      Namespaces:
+        tree: true
       Queue Size: 100
       Value: true
   Enabled: true

@@ -4,6 +4,8 @@ This project is a ROS-based implementation of [Quick-RRT*](https://www.sciencedi
 
 This implementation performs path planning for differential drive robots. Paths between points can be computed through different algorithms. The desired algorithm can be selected by simply editing the `config/params.yaml` file (the currently supported algorithms are: dubins path generation, [POSQ extend function](http://www.spencer.eu/papers/palmieriICAPS14.pdf) and cubic spline interpolation).
 
+In this project, ROS is only needed in order to use _rviz_ as a ready-to-use GUI. Indeed, the search algorithm implementation does not depend on ROS.
+
 Tested on Ubuntu 18.04 (ROS melodic) and Ubuntu 20.04 (ROS noetic).
 
 ## Build
@@ -43,7 +45,3 @@ To launch the demo, the *map server* and *rviz* are needed:
 
 ![alt text](gifs/spline.gif)
 
-## Future works
-
-- Here, the main role of ROS is to provide a graphical interface to easily set the start and goal for the path planning algorithm. Since the RRT* search implementation is almost independent of ROS, it will likely be moved to a different standalone and ROS-independent library.
-- More algorithms for paths computation!
