@@ -16,8 +16,6 @@
 #include <stdexcept>
 #include <vector>
 
-// to build and run tests: catkin_make run_tests -DBUILD_TESTS=On -DCMAKE_BUILD_TYPE=Release (perchè altrimenti ci sono i sanitizer, e rompono ros)
-
 std::ostream& operator<<(std::ostream& os, const types::Pose2D& pose) {
   os << "(" << pose.position.x << ", " << pose.position.y << ", " << pose.yaw << ")";
   return os;
