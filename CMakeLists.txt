@@ -51,3 +51,11 @@ target_link_libraries(${PROJECT_NAME}_node
 set_target_properties(${PROJECT_NAME}_node PROPERTIES CXX_STANDARD 20)
 add_compiler_flags(${PROJECT_NAME}_node)
 
+if(BUILD_TESTS)
+  catkin_add_gtest(${PROJECT_NAME}_tests tests/tests.cpp)
+
+  target_link_libraries(${PROJECT_NAME}_tests
+    ${PROJECT_NAME}
+    ${catkin_LIBRARIES}
+  )
+endif()
