@@ -248,16 +248,16 @@ void RRTRosInterface::plan_() {
   visualization_msgs::Marker tmp_marker;
   tmp_marker.header.frame_id = "map";
   tmp_marker.header.stamp = ros::Time::now();
-	tmp_marker.ns = "tree";
-	tmp_marker.action = visualization_msgs::Marker::ADD;
-	tmp_marker.id = 0;
-	tmp_marker.type = visualization_msgs::Marker::LINE_STRIP;
-	tmp_marker.pose.orientation.w = 1;
-	tmp_marker.scale.x = 0.03;
-	tmp_marker.color.r = 0.0f;
-	tmp_marker.color.g = 0.8f;
-	tmp_marker.color.b = 1.0f;
-	tmp_marker.color.a = 1.0f;
+  tmp_marker.ns = "tree";
+  tmp_marker.action = visualization_msgs::Marker::ADD;
+  tmp_marker.id = 0;
+  tmp_marker.type = visualization_msgs::Marker::LINE_STRIP;
+  tmp_marker.pose.orientation.w = 1;
+  tmp_marker.scale.x = 0.03;
+  tmp_marker.color.r = 0.0f;
+  tmp_marker.color.g = 0.8f;
+  tmp_marker.color.b = 1.0f;
+  tmp_marker.color.a = 1.0f;
   tree_markers.markers.resize(search_output.nodes.size(), tmp_marker);
   for (size_t i = 0; i < search_output.nodes.size(); ++i) {
     tree_markers.markers[i].id = static_cast<int>(i);

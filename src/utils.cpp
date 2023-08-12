@@ -6,7 +6,7 @@ namespace utility {
 
 double shortestAngularDistance(const double &current_angle, const double &target_angle) {
   double diff = fmod(target_angle - current_angle + M_PI, 2 * M_PI) - M_PI;
-    return diff < -M_PI ? diff + 2 * M_PI : diff;
+  return diff < -M_PI ? diff + 2 * M_PI : diff;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,9 +43,9 @@ int sign(const double &val) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 double normalizeAngle(double angle) {
-	while (fabs(angle) > M_PI)
-		angle -= sign(angle) * 2.0 * M_PI;
-	return angle;
+  while (fabs(angle) > M_PI)
+    angle -= sign(angle) * 2.0 * M_PI;
+  return angle;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -53,7 +53,7 @@ double normalizeAngle(double angle) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool approxEqual(const double &a, const double &b, const double &tol) {
-	return fabs(a - b) < tol;
+  return fabs(a - b) < tol;
 }
 
 } // namespace utility

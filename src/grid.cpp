@@ -8,8 +8,8 @@
 namespace grid {
 
 Grid::Grid(const Map &map) : map_(map) {
-	if (map_.height * map_.width != map_.occupancy.size())
-		throw std::runtime_error("Map size does not agree with map height and width!");
+  if (map_.height * map_.width != map_.occupancy.size())
+    throw std::runtime_error("Map size does not agree with map height and width!");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -17,7 +17,7 @@ Grid::Grid(const Map &map) : map_(map) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool Grid::isValidPosition(const types::WorldPosition &position) const {
-	return isWithinGrid_(position) && isFreeMapCell_(fromWorldToGrid_(position));
+  return isWithinGrid_(position) && isFreeMapCell_(fromWorldToGrid_(position));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -26,7 +26,7 @@ bool Grid::isValidPosition(const types::WorldPosition &position) const {
 
 types::GridPosition Grid::fromWorldToGrid_(const types::WorldPosition &world_position) const {
   return types::GridPosition({.x = static_cast<size_t>(std::floor((world_position.x - map_.origin.x) / map_.resolution)),
-                       				.y = static_cast<size_t>(std::floor((world_position.y - map_.origin.y) / map_.resolution))});
+                              .y = static_cast<size_t>(std::floor((world_position.y - map_.origin.y) / map_.resolution))});
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -34,7 +34,7 @@ types::GridPosition Grid::fromWorldToGrid_(const types::WorldPosition &world_pos
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 size_t Grid::fromGridToMap_(const types::GridPosition &grid_position) const {
-	return grid_position.x + grid_position.y * map_.width;
+  return grid_position.x + grid_position.y * map_.width;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -42,10 +42,10 @@ size_t Grid::fromGridToMap_(const types::GridPosition &grid_position) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool Grid::isWithinGrid_(const types::WorldPosition &position) const {
-	return position.x >= map_.origin.x &&
-				 position.x <= map_.origin.x + static_cast<double>(map_.width) * map_.resolution &&
-				 position.y >= map_.origin.y &&
-				 position.y <= map_.origin.y + static_cast<double>(map_.height) * map_.resolution;
+  return position.x >= map_.origin.x &&
+         position.x <= map_.origin.x + static_cast<double>(map_.width) * map_.resolution &&
+         position.y >= map_.origin.y &&
+         position.y <= map_.origin.y + static_cast<double>(map_.height) * map_.resolution;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -53,13 +53,13 @@ bool Grid::isWithinGrid_(const types::WorldPosition &position) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool Grid::straightLineFeasible_(const types::WorldPosition &world_p1, const types::WorldPosition &world_p2) const {
-	if (!isWithinGrid_(world_p1) || ! isWithinGrid_(world_p2))
-		return false;
+  if (!isWithinGrid_(world_p1) || ! isWithinGrid_(world_p2))
+    return false;
 
-	auto p1 = fromWorldToGrid_(world_p1);
-	auto p2 = fromWorldToGrid_(world_p2);
+  auto p1 = fromWorldToGrid_(world_p1);
+  auto p2 = fromWorldToGrid_(world_p2);
 
-	long int dx = p1.x > p2.x ? static_cast<long int>(p1.x - p2.x) : static_cast<long int>(p2.x - p1.x);
+  long int dx = p1.x > p2.x ? static_cast<long int>(p1.x - p2.x) : static_cast<long int>(p2.x - p1.x);
   long int dy = p1.y > p2.y ? static_cast<long int>(p1.y - p2.y) : static_cast<long int>(p2.y - p1.y);
   long int n = 1 + dx + dy;
 
@@ -67,7 +67,7 @@ bool Grid::straightLineFeasible_(const types::WorldPosition &world_p1, const typ
   dx *= 2;
   dy *= 2;
 
-	types::GridPosition p{.x = p1.x, .y = p1.y};
+  types::GridPosition p{.x = p1.x, .y = p1.y};
   std::function<void()> step_x, step_y;
   if (p2.x > p1.x)
     step_x = [&p] () {++p.x;};
@@ -99,7 +99,7 @@ bool Grid::straightLineFeasible_(const types::WorldPosition &world_p1, const typ
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool Grid::isFreeMapCell_(const types::GridPosition &p) const {
-	return map_.occupancy.at(fromGridToMap_(p)) == Map::Cell::FREE;
+  return map_.occupancy.at(fromGridToMap_(p)) == Map::Cell::FREE;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////

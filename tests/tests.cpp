@@ -386,7 +386,7 @@ protected:
                                 .K_alpha = 5.0,
                                 .K_v = 2.0};
   spline::SplineParams spline_params_{.tf = 4.0,
-		                                  .v = 1.6};
+                                      .v = 1.6};
 };
 
 TEST_F(RRTTest, UninitializedMapThrows) {

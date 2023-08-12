@@ -17,13 +17,13 @@ Tree::Tree() {}
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 node_id Tree::initializeTree(const types::Pose2D &start) {
-	nodes_.resize(1);
-	nodes_[0] = Node{.configuration = start,
-									 .id = 0,
-									 .parent = 0,
-									 .cost = 0.0,
-									 .path_from_parent = {start, start}};
-	return nodes_[0].id;
+  nodes_.resize(1);
+  nodes_[0] = Node{.configuration = start,
+                   .id = 0,
+                   .parent = 0,
+                   .cost = 0.0,
+                   .path_from_parent = {start, start}};
+  return nodes_[0].id;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -31,7 +31,7 @@ node_id Tree::initializeTree(const types::Pose2D &start) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 const std::vector<Node>& Tree::getTree() const {
-	return nodes_;
+  return nodes_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -39,7 +39,7 @@ const std::vector<Node>& Tree::getTree() const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 size_t Tree::getTreeSize() const {
-	return nodes_.size();
+  return nodes_.size();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -47,7 +47,7 @@ size_t Tree::getTreeSize() const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void Tree::reserve(size_t size) {
-	nodes_.reserve(size);
+  nodes_.reserve(size);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -55,7 +55,7 @@ void Tree::reserve(size_t size) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool Tree::isValidNodeId_(const node_id &id) const {
-	return id < nodes_.size();
+  return id < nodes_.size();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -63,10 +63,10 @@ bool Tree::isValidNodeId_(const node_id &id) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 const Node& Tree::getNodeById(const node_id &id) const {
-	if (!isValidNodeId_(id))
-		throw std::runtime_error("The given node id is invalid!");
+  if (!isValidNodeId_(id))
+    throw std::runtime_error("The given node id is invalid!");
 
-	return nodes_[id];
+  return nodes_[id];
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -74,13 +74,13 @@ const Node& Tree::getNodeById(const node_id &id) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 node_id Tree::findNearestNode(const types::Pose2D &pose) const {
-	if (nodes_.empty())
-		throw std::runtime_error("Can't find nearest node, the tree is empty!");
+  if (nodes_.empty())
+    throw std::runtime_error("Can't find nearest node, the tree is empty!");
 
-	return std::min_element(nodes_.begin(), nodes_.end(),
-													[&pose](const Node& a, const Node& b) {
-														return computeSquaredDistance(pose.position, a.configuration.position) < computeSquaredDistance(pose.position, b.configuration.position);
-													})->id;
+  return std::min_element(nodes_.begin(), nodes_.end(),
+                          [&pose](const Node& a, const Node& b) {
+                            return computeSquaredDistance(pose.position, a.configuration.position) < computeSquaredDistance(pose.position, b.configuration.position);
+                          })->id;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -88,7 +88,7 @@ node_id Tree::findNearestNode(const types::Pose2D &pose) const {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::vector<node_id> Tree::findNodesWithinRadius(const types::Pose2D &pose, double radius) const {
-	std::vector<node_id> nodes_id;
+  std::vector<node_id> nodes_id;
   double squared_radius = radius * radius;
   for (const auto &node : nodes_)
     if (computeSquaredDistance(pose.position, node.configuration.position) <= squared_radius)
@@ -101,16 +101,16 @@ std::vector<node_id> Tree::findNodesWithinRadius(const types::Pose2D &pose, doub
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 node_id Tree::insertNode(const types::Pose2D &pose, const node_id &parent, double cost, const types::Path &path_from_parent) {
-	if (!isValidNodeId_(parent))
-		throw std::runtime_error("The given parent id is invalid!");
-	
-	node_id id = nodes_.size();
-	nodes_.push_back(Node{.configuration = pose,
-												.id = id,
-												.parent = parent,
-												.cost = cost,
-												.path_from_parent = path_from_parent});
-	return id;
+  if (!isValidNodeId_(parent))
+    throw std::runtime_error("The given parent id is invalid!");
+  
+  node_id id = nodes_.size();
+  nodes_.push_back(Node{.configuration = pose,
+                        .id = id,
+                        .parent = parent,
+                        .cost = cost,
+                        .path_from_parent = path_from_parent});
+  return id;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -118,14 +118,14 @@ node_id Tree::insertNode(const types::Pose2D &pose, const node_id &parent, doubl
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void Tree::updateParent(const node_id &child_id, const node_id &new_parent_id, double new_cost, const types::Path &new_path_from_parent) {
-	if (!isValidNodeId_(child_id))
-		throw std::runtime_error("The given child id is invalid!");
-	if (!isValidNodeId_(new_parent_id))
-		throw std::runtime_error("The given parent id is invalid!");
+  if (!isValidNodeId_(child_id))
+    throw std::runtime_error("The given child id is invalid!");
+  if (!isValidNodeId_(new_parent_id))
+    throw std::runtime_error("The given parent id is invalid!");
 
-	nodes_[child_id].parent = new_parent_id;
-	nodes_[child_id].cost = new_cost;
-	nodes_[child_id].path_from_parent = new_path_from_parent;
+  nodes_[child_id].parent = new_parent_id;
+  nodes_[child_id].cost = new_cost;
+  nodes_[child_id].path_from_parent = new_path_from_parent;
 }
 
 } // namespace tree

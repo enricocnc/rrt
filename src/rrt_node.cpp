@@ -2,15 +2,15 @@
 
 int main(int argc, char** argv) {
 
-	ros::init(argc, argv, "rrt_node");
-	
-	ros::NodeHandle nh("~");
+  ros::init(argc, argv, "rrt_node");
+  
+  ros::NodeHandle nh("~");
 
-	ros_interface::RRTRosInterface node(&nh);
+  ros_interface::RRTRosInterface node(&nh);
 
-	ROS_INFO("Node initializated. Starting to spin");
+  ROS_INFO("Node initializated. Starting to spin");
 
-	ros::spin();
+  ros::spin();
 
-	return 0;
+  return 0;
 }
