@@ -20,6 +20,11 @@ To launch the demo, the *map server* and *rviz* are needed:
 
 `sudo apt install ros-${ROS_DISTRO}-map-server ros-${ROS_DISTRO}-rviz`.
 
+
+Another option is to install the dependencies through rosdep:
+
+`rosdep install --from-paths <path/to/rrt/package>`
+
 ## Demo
 
 * Launch the demo through:<br>
@@ -44,4 +49,3 @@ To launch the demo, the *map server* and *rviz* are needed:
 **Cubic spline interpolation**
 
 ![alt text](gifs/spline.gif)
-
