@@ -1,0 +1,8 @@
+gifs/
+tests/
+.dockerignore
+.gitignore
+.git/
+Dockerfile
+LICENSE
+README.md
